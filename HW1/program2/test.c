@@ -7,7 +7,7 @@ int main(int argc,char* argv[]){
 
 	printf("--------USER PROGRAM--------\n");
 //	alarm(2);
-	raise(SIGINT);
+	raise(SIGBUS);
 	sleep(5);
 	printf("user process success!!\n");
 	printf("--------USER PROGRAM--------\n");
