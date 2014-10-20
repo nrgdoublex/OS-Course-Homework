@@ -282,25 +282,30 @@ int main(int argc,char *argv[]){
 					printf("The child process(pid=%d) of parent process(pid=%d) ",pid[idx+1],pid[idx]);
 					switch(wait_status[idx]){
 						case 1:
-							printf("has normal execution, its exit status = %d\n",exit_status[idx]);
+							printf("has normal execution\n");
+							printf("Its exit status = %d\n\n",exit_status[idx]);
 							break;
 						case 2:
-							printf("is terminated by signal, signal number = %d\n",exit_status[idx]);
+							printf("is terminated by signal\n");
+							printf("Its signal number = %d\n",exit_status[idx]);
 							print_chld_signal(exit_status[idx]);
+							printf("\n");
 							break;
 						case 3:
-							printf("is stopped by signal, signal number = %d\n",exit_status[idx]);
+							printf("is stopped by signal\n");
+							printf("Its signal number = %d\n\n",exit_status[idx]);
 							print_chld_stopped_signal(exit_status[idx]);
+							printf("\n");
 							break;
 						case 4:
-							printf("resume its execution\n");
+							printf("resume its execution\n\n");
 							break;
 						default:
-							printf("invalid mmem accessed");
+							printf("\ninvalid mmem accessed\n\n");
 					}
 				}
 			}
-			printf("myfork process(pid=%d) execute normally\n",pid[0]);
+			printf("\nMyfork process(pid=%d) execute normally\n",pid[0]);
 		}
 	}
 	return 0;
