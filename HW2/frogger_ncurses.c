@@ -5,10 +5,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
-#define NUM_LOG_LINE 5 
-#define NUM_LOGS_PER_LINE 8
-#define ROW_END 0
+#define NUM_LOG_LINE (20)
+#define NUM_LOGS_PER_LINE (8)
+#define ROW_END (0)
 #define ROW_SCRATCH (NUM_LOG_LINE + ROW_END + 1)
 
 typedef enum{LEFT,RIGHT,UP,DOWN} Direction;
@@ -177,6 +176,7 @@ int main(int argc,char *argv[]){
 	}
 	init_frog();
 	gamestate=PLAYING;
+	refresh();
 
 	for(i=0;i<NUM_LOG_LINE;i++)
 		pthread_create(&log_thread[i],NULL,&log_function,&logs_info[i]);
