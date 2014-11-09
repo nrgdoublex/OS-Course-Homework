@@ -1,4 +1,4 @@
-This is the readme of homework1
+This is the readme of homework2
 
 CONTENT FILES:
 	1.frogger_ncurses.c
