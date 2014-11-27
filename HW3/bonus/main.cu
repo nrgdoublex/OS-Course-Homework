@@ -11,7 +11,7 @@
 //page size is 32 bytes
 #define PAGESIZE (32)
 //32 KB in the shared memory
-#define PHYSICAL_MEM_SIZE (64)
+#define PHYSICAL_MEM_SIZE (32768)
 //128 KB of secondary storage
 #define STORAGE_SIZE (131072)
 //memory segment size for each thread
@@ -139,7 +139,7 @@ __device__ void init_pageTable(int pt_entries)
 		pt[i+COUNTER_OFFSET]=0;
 	}
 	for(int i=0;i<STORAGE_SIZE;i++){
-		results[i]=input[i];
+		results[i]=0;
 		storage[i]=0;
 	}
 }

@@ -11,7 +11,7 @@
 //page size is 32 bytes
 #define PAGESIZE (32)
 //32 KB in the shared memory
-#define PHYSICAL_MEM_SIZE (64)
+#define PHYSICAL_MEM_SIZE (32768)
 //128 KB of secondary storage
 #define STORAGE_SIZE (131072)
 
@@ -144,8 +144,8 @@ __device__ void init_pageTable(int pt_entries)
 		pt[i+COUNTER_OFFSET]=0;
 	}
 	for(int i=0;i<STORAGE_SIZE;i++){
-		results[i]=input[i];
-		storage[i]=0;
+		results[i]=0;
+		storage[i]=input[i];
 	}
 //	for(int i=0;i<PHYSICAL_MEM_SIZE;i++){
 //		data[i]=0;
@@ -217,7 +217,7 @@ __global__ void mykernel(int input_size)
 	for(int i=0;i<input_size;i++)
 		Gwrite(data,i,input[i]);
 
-	for(int i=input_size-1;i>=input_size-10;i--)
+	for(int i=input_size-1;i>=input_size-32769;i--)
 		int value = Gread(data,i);
 
 	snapshot(results,data,0,input_size);
