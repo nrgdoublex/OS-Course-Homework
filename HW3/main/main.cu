@@ -9,7 +9,7 @@
 #include <time.h>
 
 //page size is 32 bytes
-#define PAGESIZE (32)
+#define PAGESIZE          (32)
 //32 KB in the shared memory
 #define PHYSICAL_MEM_SIZE (32768)
 //128 KB of secondary storage
@@ -25,23 +25,11 @@
 typedef unsigned char uchar;
 typedef uint32_t u32;
 
-/*typedef struct{
-	int vir_page;
-	int phy_page;
-	int time;
-}PT_entry;*/
-
 #define VIRPAGE_OFFSET (0)
-#define PHYPAGE_OFFSET (1)
-#define COUNTER_OFFSET (2)
-#define PT_ENTRY_LEN   (3)
+#define COUNTER_OFFSET (1)
+#define PT_ENTRY_LEN   (2)
 
 #define INVALID_VALUE (0xffffffff)
-
-//Page table entry point
-//__device__ __managed__ PT_entry *page_table;
-
-//Physical memory
 
 
 //page table entries
@@ -66,29 +54,25 @@ __device__ u32 paging(uchar *buffer, u32 page_num, u32 offset)
 	u32 lru_time=1;
 	u32 lru_page_num=INVALID_VALUE;
 	u32 valid_page_num=INVALID_VALUE;
-	for(int i=0;i<PHYSICAL_PAGE_NUM*PT_ENTRY_LEN;i+=PT_ENTRY_LEN){
-		if(pt[i+VIRPAGE_OFFSET]==page_num){
-			pt[i+COUNTER_OFFSET]=1;
-			valid_page_num=pt[i+PHYPAGE_OFFSET];
+	for(int i=0;i<PHYSICAL_PAGE_NUM;i++){
+		if(pt[i*PT_ENTRY_LEN+VIRPAGE_OFFSET]==page_num){
+			pt[i*PT_ENTRY_LEN+COUNTER_OFFSET]=1;
+			valid_page_num=i;
 		}
-		else if(pt[i+COUNTER_OFFSET]>0)
-			pt[i+COUNTER_OFFSET]++;
-		if(pt[i+PHYPAGE_OFFSET]==INVALID_VALUE)
-			free_page_num=i/PT_ENTRY_LEN;
-		if(pt[i+COUNTER_OFFSET]>lru_time){
-			lru_time=pt[i+COUNTER_OFFSET];
-			lru_page_num=i/PT_ENTRY_LEN;
+		else if(pt[i*PT_ENTRY_LEN+COUNTER_OFFSET]>0)
+			pt[i*PT_ENTRY_LEN+COUNTER_OFFSET]++;
+		if(pt[i*PT_ENTRY_LEN+VIRPAGE_OFFSET]==INVALID_VALUE)
+			free_page_num=i;
+		if(pt[i*PT_ENTRY_LEN+COUNTER_OFFSET]>lru_time){
+			lru_time=pt[i*PT_ENTRY_LEN+COUNTER_OFFSET];
+			lru_page_num=i;
 		}
 	}
-//	printf("valid_page_num = %u\n",valid_page_num);
-//	printf("free_page_num = %u\n",free_page_num);
-//	printf("lru_page_num = %u\n",lru_page_num);
 	if(valid_page_num!=INVALID_VALUE){
 		return valid_page_num*PAGESIZE+offset;
 	}
 	else if(free_page_num!=INVALID_VALUE){
 		pt[free_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]=page_num;
-		pt[free_page_num*PT_ENTRY_LEN+PHYPAGE_OFFSET]=free_page_num;
 		pt[free_page_num*PT_ENTRY_LEN+COUNTER_OFFSET]=1;
 		PAGEFAULT++;
 		return free_page_num*PAGESIZE+offset;
@@ -97,12 +81,11 @@ __device__ u32 paging(uchar *buffer, u32 page_num, u32 offset)
 		u32 swap_out_start=pt[lru_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]*PAGESIZE;
 		u32 swap_in_start=page_num*PAGESIZE;
 		u32 phy_start=lru_page_num*PAGESIZE;
-		for(int i=0;i<PAGESIZE;i++)
+		for(int i=0;i<PAGESIZE;i++){
 			storage[swap_out_start+i]=buffer[phy_start+i];
-		for(int i=0;i<PAGESIZE;i++)
 			buffer[phy_start+i]=storage[swap_in_start+i];
+		}
 		pt[lru_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]=page_num;
-		pt[lru_page_num*PT_ENTRY_LEN+PHYPAGE_OFFSET]=lru_page_num;
 		pt[lru_page_num*PT_ENTRY_LEN+COUNTER_OFFSET]=1;
 		PAGEFAULT++;
 		return phy_start+offset; 
@@ -122,7 +105,7 @@ __device__ uchar Gread(uchar *buffer,u32 addr)
 __device__ void Gwrite(uchar *buffer, u32 addr, uchar value)
 {
 	u32 page_num  = addr/PAGESIZE;
-	u32 offset    = addr%PAGESIZE;
+	u32 offset 	  = addr%PAGESIZE;
 
 	//addr means the addr in shared memory
 	addr = paging(buffer, page_num, offset);
@@ -140,16 +123,12 @@ __device__ void init_pageTable(int pt_entries)
 	PAGEFAULT=0;
 	for(int i=0;i<PHYSICAL_PAGE_NUM*PT_ENTRY_LEN;i+=PT_ENTRY_LEN){
 		pt[i+VIRPAGE_OFFSET]=INVALID_VALUE;
-		pt[i+PHYPAGE_OFFSET]=INVALID_VALUE;
 		pt[i+COUNTER_OFFSET]=0;
 	}
 	for(int i=0;i<STORAGE_SIZE;i++){
 		results[i]=0;
-		storage[i]=input[i];
+		storage[i]=0;
 	}
-//	for(int i=0;i<PHYSICAL_MEM_SIZE;i++){
-//		data[i]=0;
-//	}
 }
 
 int load_binaryFile(const char *filename, uchar *input, int size)
@@ -217,18 +196,15 @@ __global__ void mykernel(int input_size)
 	for(int i=0;i<input_size;i++)
 		Gwrite(data,i,input[i]);
 
-	for(int i=input_size-1;i>=input_size-32769;i--)
+	for(int i=98304;i<input_size;i++)
+		Gwrite(data,i,input[i]);
+	for(int i=input_size-1;i>=input_size-10;i--)
 		int value = Gread(data,i);
 
 	snapshot(results,data,0,input_size);
 	//####GWrite/Gread code section end####
 	printf("pagefault times=%u\n",PAGEFAULT);
 	return;
-}
-
-__global__ void hello()
-{
-	printf("hello, world!!\n");
 }
 
 int main()
