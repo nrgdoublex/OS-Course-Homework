@@ -27,20 +27,86 @@
 typedef unsigned char uchar;
 typedef uint32_t u32;
 
-#define VIRPAGE_OFFSET (0)
-#define PHYPAGE_OFFSET (1)
-#define COUNTER_OFFSET (2)
-#define PT_ENTRY_LEN   (3)
+/*----------------------------------The macro below are for page table--------------------------------*/
 
 #define INVALID_VALUE (0xffffffff)
+
+#define THREAD_PID_0					(0)
+#define THREAD_PID_1					(1)
+#define THREAD_PID_2					(2)
+#define THREAD_PID_3					(3)
+
+#define PID_BIT_START					(0)
+#define PID_BIT_LEN 					(2)
+#define VIRPAGE_BIT_START				(PID_BIT_START+PID_BIT_LEN)
+#define VIRPAGE_BIT_LEN					(12)
+#define COUNTER_BIT_START				(VIRPAGE_BIT_START+VIRPAGE_BIT_LEN)
+#define COUNTER_BIT_LEN					(18)
+
+#define FULL_MASK						(0xFFFFFFFF)
+#define PID_MASK						(0x3)
+#define VIRPAGE_MASK					(0x3FFC)
+#define COUNTER_MASK					(0xFFFFC000)
+
+#define GET_PID(x)						((x&PID_MASK)>>PID_BIT_START)
+#define GET_VIRPAGE(x)					((x&VIRPAGE_MASK)>>VIRPAGE_BIT_START)
+#define GET_COUNTER(x)					((x&COUNTER_MASK)>>COUNTER_BIT_START)
+
+#define CLEAR_PID(x)					(x&(~PID_MASK))
+#define CLEAR_VIRPAGE(x)				(x&(~VIRPAGE_MASK))
+#define CLEAR_COUNTER(x)				(x&(~COUNTER_MASK))
+
+#define SET_PID(src,value)				(CLEAR_PID(src)|(value<<PID_BIT_START))
+#define SET_VIRPAGE(src,value)			(CLEAR_VIRPAGE(src)|(value<<VIRPAGE_BIT_START))
+#define SET_COUNTER(src,value)			(CLEAR_COUNTER(src)|(value<<COUNTER_BIT_START))
+
+/*----------------------------------The macro below are for storage table-------------------------------------*/
+
+#define FIRST_PID_START					(0)
+#define FIRST_PID_LEN					(2)
+#define FIRST_VIRPAGE_START				(FIRST_PID_START+FIRST_PID_LEN)
+#define FIRST_VIRPAGE_LEN				(12)
+#define SECOND_PID_START				(FIRST_VIRPAGE_START+FIRST_VIRPAGE_LEN)
+#define SECOND_PID_LEN					(2)
+#define SECOND_VIRPAGE_START			(SECOND_PID_START+SECOND_PID_LEN)
+#define SECOND_VIRPAGE_LEN				(12)
+
+#define FIRST_PID_MASK					(0x3)
+#define FIRST_VIRPAGE_MASK				(0x3FFC)
+#define SECOND_PID_MASK					(0xC000)
+#define SECOND_VIRPAGE_MASK				(0xFFF0000)
+
+#define GET_FIRST_PID(x)				((x&FIRST_PID_MASK)>>FIRST_PID_START)
+#define GET_FIRST_VIRPAGE(x)			((x&FIRST_VIRPAGE_MASK)>>FIRST_VIRPAGE_START)
+#define GET_SECOND_PID(x)				((x&SECOND_PID_MASK)>>SECOND_PID_START)
+#define GET_SECOND_VIRPAGE(x)			((x&SECOND_VIRPAGE_MASK)>>SECOND_VIRPAGE_START)
+
+#define CLEAR_FIRST_PID(x)				(x&(~FIRST_PID_MASK))
+#define CLEAR_FIRST_VIRPAGE(x)			(x&(~FIRST_VIRPAGE_MASK))
+#define CLEAR_SECOND_PID(x)				(x&(~SECOND_PID_MASK))
+#define CLEAR_SECOND_VIRPAGE(x)			(x&(~SECOND_VIRPAGE_MASK))
+
+#define SET_FIRST_PID(src,value)		(CLEAR_FIRST_PID(src)|(value<<FIRST_PID_START))
+#define SET_FIRST_VIRPAGE(src,value)	(CLEAR_FIRST_VIRPAGE(src)|(value<<FIRST_VIRPAGE_START))
+#define SET_SECOND_PID(src,value)		(CLEAR_SECOND_PID(src)|(value<<SECOND_PID_START))
+#define SET_SECOND_VIRPAGE(src,value)	(CLEAR_SECOND_VIRPAGE(src)|(value<<SECOND_VIRPAGE_START))
+
+#define GET_STORAGE_PID(num)	 		((num%2==0)?GET_FIRST_PID(STORAGE_TABLE[num/2]):GET_SECOND_PID(STORAGE_TABLE[num/2]))
+#define GET_STORAGE_VIRPAGE(num)	 	((num%2==0)?GET_FIRST_VIRPAGE(STORAGE_TABLE[num/2]):GET_SECOND_VIRPAGE(STORAGE_TABLE[num/2]))
+#define SET_STORAGE_PID(num,value)		STORAGE_TABLE[num/2]=((num%2==0)?SET_FIRST_PID(STORAGE_TABLE[num/2],value):SET_SECOND_PID(STORAGE_TABLE[num/2],value))
+#define SET_STORAGE_VIRPAGE(num,value)	STORAGE_TABLE[num/2]=((num%2==0)?SET_FIRST_VIRPAGE(STORAGE_TABLE[num/2],value):SET_SECOND_VIRPAGE(STORAGE_TABLE[num/2],value))
 
 #define __LOCK(); for(int p=0;p<4;p++){if(threadIdx.x==p){
 #define __UNLOCK(); }__syncthreads();}
 
-#define __GET_BASE() ((threadIdx.x)*MEMORY_SEGMENT)
+//#define __GET_BASE() ((threadIdx.x)*MEMORY_SEGMENT)
+#define __GET_BASE() (p*MEMORY_SEGMENT)
 
-//page table entries
-__device__ __managed__ int PAGE_ENTRIES = 0;
+//Storage table
+
+__device__ __managed__ u32 *STORAGE_TABLE;
+__device__ __managed__ u32 STORAGE_COUNT;
+
 //Page-fault times
 __device__ __managed__ u32 PAGEFAULT = 0;
 
@@ -61,44 +127,77 @@ __device__ u32 paging(uchar *buffer, u32 page_num, u32 offset)
 	u32 lru_time=1;
 	u32 lru_page_num=INVALID_VALUE;
 	u32 valid_page_num=INVALID_VALUE;
-	for(int i=0;i<PHYSICAL_PAGE_NUM*PT_ENTRY_LEN;i+=PT_ENTRY_LEN){
-		if(pt[i+VIRPAGE_OFFSET]==page_num){
-			pt[i+COUNTER_OFFSET]=1;
-			valid_page_num=pt[i+PHYPAGE_OFFSET];
+	for(int i=0;i<PHYSICAL_PAGE_NUM;i++){
+		if((GET_PID(pt[i])==threadIdx.x) && (GET_VIRPAGE(pt[i])==page_num) && (GET_COUNTER(pt[i])>0)){
+			pt[i]=SET_COUNTER(pt[i],1);
+			valid_page_num=i;
 		}
-		else if(pt[i+COUNTER_OFFSET]>0)
-			pt[i+COUNTER_OFFSET]++;
-		if(pt[i+PHYPAGE_OFFSET]==INVALID_VALUE)
-			free_page_num=i/PT_ENTRY_LEN;
-		if(pt[i+COUNTER_OFFSET]>lru_time){
-			lru_time=pt[i+COUNTER_OFFSET];
-			lru_page_num=i/PT_ENTRY_LEN;
+		else if(GET_COUNTER(pt[i])>0)
+			pt[i]=SET_COUNTER(pt[i],GET_COUNTER(pt[i])+1);
+
+		//get free page
+		if(GET_COUNTER(pt[i])==0)
+			free_page_num=i;
+		//get LRU page
+		if(GET_COUNTER(pt[i])>lru_time){
+			lru_time=GET_COUNTER(pt[i]);
+			lru_page_num=i;
 		}
 	}
-//	printf("valid_page_num = %u\n",valid_page_num);
-//	printf("free_page_num = %u\n",free_page_num);
-//	printf("lru_page_num = %u\n",lru_page_num);
 	if(valid_page_num!=INVALID_VALUE){
 		return valid_page_num*PAGESIZE+offset;
 	}
 	else if(free_page_num!=INVALID_VALUE){
-		pt[free_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]=page_num;
-		pt[free_page_num*PT_ENTRY_LEN+PHYPAGE_OFFSET]=free_page_num;
-		pt[free_page_num*PT_ENTRY_LEN+COUNTER_OFFSET]=1;
+		pt[free_page_num]=SET_PID(pt[free_page_num],threadIdx.x);
+		pt[free_page_num]=SET_VIRPAGE(pt[free_page_num],page_num);
+		pt[free_page_num]=SET_COUNTER(pt[free_page_num],1);
+/*		for(int i=0;i<PHYSICAL_PAGE_NUM;i++){
+			if((GET_COUNTER(pt[i])>0)||(i==free_page_num))
+				pt[i]=SET_COUNTER(pt[i],GET_COUNTER(pt[i])+1);
+		}*/
 		PAGEFAULT++;
 		return free_page_num*PAGESIZE+offset;
 	}
 	else{
-		u32 swap_out_start=pt[lru_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]*PAGESIZE;
-		u32 swap_in_start=page_num*PAGESIZE;
+		u32 swap_out_start=INVALID_VALUE;
+		u32 swap_in_start=INVALID_VALUE;
 		u32 phy_start=lru_page_num*PAGESIZE;
-		for(int i=0;i<PAGESIZE;i++)
-			storage[swap_out_start+i]=buffer[phy_start+i];
-		for(int i=0;i<PAGESIZE;i++)
-			buffer[phy_start+i]=storage[swap_in_start+i];
-		pt[lru_page_num*PT_ENTRY_LEN+VIRPAGE_OFFSET]=page_num;
-		pt[lru_page_num*PT_ENTRY_LEN+PHYPAGE_OFFSET]=lru_page_num;
-		pt[lru_page_num*PT_ENTRY_LEN+COUNTER_OFFSET]=1;
+		for(int i=0;i<STORAGE_COUNT;i++){
+			if((GET_STORAGE_PID(i)==GET_PID(pt[lru_page_num])) && (GET_STORAGE_VIRPAGE(i)==GET_VIRPAGE(pt[lru_page_num])))
+				swap_out_start=i*PAGESIZE;
+
+		
+			if((GET_STORAGE_PID(i)==threadIdx.x) && (GET_STORAGE_VIRPAGE(i)==page_num))
+				swap_in_start=i*PAGESIZE;
+		}
+		//if the storage does not contain the page to be swapped out
+		if(swap_out_start==INVALID_VALUE){
+			swap_out_start=STORAGE_COUNT*PAGESIZE;
+			SET_STORAGE_PID(STORAGE_COUNT,GET_PID(pt[lru_page_num]));
+			SET_STORAGE_VIRPAGE(STORAGE_COUNT,GET_VIRPAGE(pt[lru_page_num]));
+			STORAGE_COUNT++;
+		}
+		//if the page to be swapped in is not in the storage
+		if(swap_in_start==INVALID_VALUE){
+			for(int i=0;i<PAGESIZE;i++){
+				storage[swap_out_start+i]=buffer[phy_start+i];
+				buffer[phy_start+i]=0;
+			}
+		}
+		//if the page to be swapped in us in the storage
+		else{
+			for(int i=0;i<PAGESIZE;i++){
+				storage[swap_out_start+i]=buffer[phy_start+i];
+				buffer[phy_start+i]=storage[swap_in_start+i];
+			}
+		}
+		pt[lru_page_num]=SET_PID(pt[lru_page_num],threadIdx.x);
+		pt[lru_page_num]=SET_VIRPAGE(pt[lru_page_num],page_num);
+		pt[lru_page_num]=SET_COUNTER(pt[lru_page_num],1);
+/*		for(int i=0;i<PHYSICAL_PAGE_NUM;i++){
+			if((GET_COUNTER(pt[i])>0)||(i==lru_page_num))
+				pt[i]=SET_COUNTER(pt[i],GET_COUNTER(pt[i])+1);
+		}*/
 		PAGEFAULT++;
 		return phy_start+offset; 
 	}
@@ -133,10 +232,10 @@ __device__ void snapshot(uchar *results, uchar *buffer, int offset, int input_si
 __device__ void init_pageTable(int pt_entries)
 {
 	PAGEFAULT=0;
-	for(int i=0;i<PHYSICAL_PAGE_NUM*PT_ENTRY_LEN;i+=PT_ENTRY_LEN){
-		pt[i+VIRPAGE_OFFSET]=INVALID_VALUE;
-		pt[i+PHYPAGE_OFFSET]=INVALID_VALUE;
-		pt[i+COUNTER_OFFSET]=0;
+	STORAGE_TABLE = pt+PHYSICAL_PAGE_NUM;
+	STORAGE_COUNT=0;
+	for(int i=0;i<PHYSICAL_PAGE_NUM+2048;i++){
+		pt[i]=0;
 	}
 	for(int i=0;i<STORAGE_SIZE;i++){
 		results[i]=0;
@@ -198,9 +297,7 @@ __global__ void mykernel(int input_size)
 	__shared__ uchar data[PHYSICAL_MEM_SIZE];
 
 	//get page table entries
-	int pt_entries;
-	pt_entries = PHYSICAL_MEM_SIZE/PAGESIZE;
-
+	int pt_entries=PHYSICAL_MEM_SIZE/PAGESIZE;
 	//We should initialize the page table
 	if(threadIdx.x==0)
 		init_pageTable(pt_entries);
@@ -223,14 +320,8 @@ __global__ void mykernel(int input_size)
 	snapshot(results+__GET_BASE(),data,__GET_BASE(),input_size);
 	__UNLOCK();
 	//####GWrite/Gread code section end####
-	if(threadIdx.x==0)
-		printf("pagefault times=%u\n",PAGEFAULT);
+	printf("this thread pid = %d, total pagefault times=%u\n",threadIdx.x,PAGEFAULT);
 	return;
-}
-
-__global__ void hello()
-{
-	printf("hello, world!!\n");
 }
 
 int main()
@@ -254,9 +345,6 @@ int main()
 
 	t=clock()-t;
 	printf("total elapsed time = %f\n",((float)t)/CLOCKS_PER_SEC);
-	//int output_size;
-	//output_size=write_binaryFile(OUTFILE, input, input_size);
-	//printf("The write size is %d\n",output_size);
 
 	return 0;
 }
