@@ -9,8 +9,9 @@
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 #include <linux/atomic.h>
-#include <asm/uaccess.h>
 #include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <asm/uaccess.h>
 #include "ioc_hw5.h"
 
 #define DUBUG
@@ -43,6 +44,8 @@
 #define DEV_READABLE		(1)
 #define DEV_NOT_READABLE	(0)
 
+#define KEYBOARD_IRQ		(1)
+
 #undef PMEG
 #define PMEG(fmt, args...) printk(KERN_DEBUG "OS_HW5:" fmt, ## args)
 
@@ -56,7 +59,7 @@ struct dataIn{
 // the data structure of device
 struct oshw5_dev{
 	struct work_struct work;
-	struct workqueue_struct *workqueue;
+//	struct workqueue_struct *workqueue;
 	struct semaphore sem;
 	int drv_major;					//device major number
 	int drv_minor;					//device minor number
@@ -109,6 +112,15 @@ unsigned int myinl(unsigned short int port)
 	return *value;
 }
 
+/*---------------------IRQ Routines---------------------*/
+irqreturn_t interrupt_routine(int irq, void *dev_id)
+{
+	myoutl(myinl(DMACOUNTADDR)+1,DMACOUNTADDR);
+
+	return IRQ_HANDLED;
+}
+
+
 /*---------------------Arithmetic Functions---------------------*/
 int prime(int base, short nth)
 {
@@ -131,7 +143,7 @@ int prime(int base, short nth)
 	return num;
 }
 
-int arithmetic(char operator, int operand1, short operand2)
+int arithmetic_routine(char operator, int operand1, short operand2)
 {
 	int ans;
 
@@ -162,7 +174,7 @@ int arithmetic(char operator, int operand1, short operand2)
 void arithmetic_work(struct work_struct *work)
 {
 	//calculate arithmetics
-	myoutl(arithmetic(myinb(DMAOPCODEADDR),myinl(DMAOPERANDBADDR),myinw(DMAOPERANDCADDR)),DMAANSADDR);
+	myoutl(arithmetic_routine(myinb(DMAOPCODEADDR),myinl(DMAOPERANDBADDR),myinw(DMAOPERANDCADDR)),DMAANSADDR);
 
 	//set readable register 	
 	myoutl(DEV_READABLE, DMAREADABLEADDR);
@@ -233,18 +245,18 @@ ssize_t drv_write(struct file *filp, const char __user *buf, size_t count, loff_
 	myoutw(input.c,DMAOPERANDCADDR);							//write operand2
 
 	PMEG("%s(): queue work\n",__FUNCTION__);
-//	retval = schedule_work(&drv_dev->work);
-	retval = queue_work(drv_dev->workqueue, &drv_dev->work);	//send work to workqueue
+	retval = schedule_work(&drv_dev->work);
+//	retval = queue_work(drv_dev->workqueue, &drv_dev->work);	//send work to workqueue
 
 	value=myinl(DMABLOCKADDR);
 	if(value==NONBLOCKING_IO){									//if blocking IO is enabled
 		PMEG("%s(): non-block\n",__FUNCTION__);
 	}
 	else if(value==BLOCKING_IO){								//if non-blocking IO is enabled
+		PMEG("%s(): block\n",__FUNCTION__);
 		while(myinl(DMAREADABLEADDR)==DEV_NOT_READABLE){
 			msleep(1);
 		}
-		PMEG("%s(): block\n",__FUNCTION__);
 	}
 	else
 		PMEG("%s(): BLOCK Register Error\n",__FUNCTION__);
@@ -396,6 +408,13 @@ int __init init_modules(void)
 
 	PMEG("%s():--------------------START--------------------\n",__FUNCTION__);
 
+	//register IRQ number
+	if((result=request_irq(KEYBOARD_IRQ, interrupt_routine, IRQF_SHARED, "OS_HW5", interrupt_routine))){
+		PMEG("%s():register keyboard irq fail\n",__FUNCTION__);
+		goto request_irq_fail;
+	}
+	PMEG("%s():request_irq %d return %d",__FUNCTION__,KEYBOARD_IRQ,result);
+
 	//register device
 	if((result = alloc_chrdev_region(&devno, 0, DRV_NR_DEVS, "os_hw5"))){						//register char device
 		PMEG("%s():can't get device number\n",__FUNCTION__);
@@ -422,7 +441,7 @@ int __init init_modules(void)
 	}
 	//we don't initialize work struct here
 	INIT_WORK(&drv_dev->work, arithmetic_work);
-	drv_dev->workqueue = create_workqueue("oshw5_wq");											//create workqueue
+//	drv_dev->workqueue = create_workqueue("oshw5_wq");											//create workqueue
 
 
 	//initialize dma buffer
@@ -436,13 +455,15 @@ int __init init_modules(void)
 	return 0;
 
 dma_buf_fail:
-	destroy_workqueue(drv_dev->workqueue);
+//	destroy_workqueue(drv_dev->workqueue);
 	cdev_del(&drv_dev->cdev);
 cdev_fail:
 	kfree(&drv_dev);
 allocate_fail:
 	unregister_chrdev_region(devno,DRV_NR_DEVS);
 register_fail:
+	free_irq(KEYBOARD_IRQ,interrupt_routine);
+request_irq_fail:
 
 	return result;
 }
@@ -450,11 +471,16 @@ register_fail:
 void __exit exit_modules(void)
 {
 	dev_t devno = MKDEV(drv_dev->drv_major, drv_dev->drv_minor);
+	int interrupt_count=0;
+	
+
+	interrupt_count=myinl(DMACOUNTADDR);
+	PMEG("%s():interrupt count = %d\n",__FUNCTION__,interrupt_count);
 
 	free_dma_buf();										//free dma buffer
 	PMEG("%s():free dma buffer\n",__FUNCTION__);
 
-	destroy_workqueue(drv_dev->workqueue);				//destroy workqueue
+//	destroy_workqueue(drv_dev->workqueue);				//destroy workqueue
 	if(drv_dev){
 		cdev_del(&drv_dev->cdev);						//delete char device
 		kfree(drv_dev);									//free the driver data structure
@@ -463,6 +489,8 @@ void __exit exit_modules(void)
 
 	unregister_chrdev_region(devno, DRV_NR_DEVS);		//unregister char device
 	PMEG("%s():unregister chrdev\n",__FUNCTION__);
+	free_irq(KEYBOARD_IRQ,interrupt_routine);
+	PMEG("%s():unregister irq\n",__FUNCTION__);			//unregister irq
 	PMEG("%s():--------------------END--------------------\n",__FUNCTION__);
 	return;
 }
