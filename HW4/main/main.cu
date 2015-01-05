@@ -65,7 +65,7 @@ typedef uint16_t u16;
 //storing syatem information
 typedef struct{
 	uchar bitmap[MAX_FILE_NUM/BITS_IN_BYTE];	//the bitmap recording free blocks
-	u32 file_num			:10;		//the number of files
+	u32 file_num			:11;		//the number of files
 	u16 file_list_time[MAX_FILE_NUM];	//list files in order of decreasing modified time
 	u16 file_list_size[MAX_FILE_NUM];	//list files in order of decreasing file size
 }SystemInfo;
@@ -78,7 +78,7 @@ typedef struct{
 	u32 create_time		:10;	//the time when the file is created
 	u32 modified_time	:10;	//the last modified time of a file
 	u32 block_num		:10;	//the index of its file block
-	u32 file_size		:10;	//the size of a file
+	u32 file_size		:11;	//the size of a file
 }FCB;
 
 //FCB array pointer
@@ -113,8 +113,10 @@ __device__ void set_bitmap(u32 index, u32 flag)
 	u32 offset	 = index%BITS_IN_BYTE;
 	if(flag==VALID)
 		system_info->bitmap[byte_num] = system_info->bitmap[byte_num]|(VALID<<offset);
-	else
-		system_info->bitmap[byte_num] = system_info->bitmap[byte_num]|(FREE<<offset);
+	else{
+		system_info->bitmap[byte_num] = system_info->bitmap[byte_num]&(~(VALID<<offset));
+//		system_info->bitmap[byte_num] = system_info->bitmap[byte_num]|(FREE<<offset);
+	}
 }
 
 /************************************************************************************
@@ -147,7 +149,7 @@ __device__ u32 cpy_filename(char *dest,const char *src)
 		dest[index]=src[index];
 		index++;
 	}
-	dest[++index]='\0';
+	dest[index]='\0';
 	return index;
 }
 
@@ -182,7 +184,7 @@ __device__ u32 open(const char *name, u32 mode)
 		u32 free_block=INVALID_VALUE;
 		//search the bitmap for free block
 		for(int i=0;i<MAX_FILE_NUM;i++){
-			if(get_bitmap(i)==FREE_BLOCK_BIT){
+			if(get_bitmap(i)==FREE){
 				free_block=i;
 				break;
 			}
@@ -219,6 +221,7 @@ __device__ u32 open(const char *name, u32 mode)
 		}
 		//if no free blocks are available, return error;
 		else{
+			printf("no free block\n");
 			return FILE_OPEN_ERROR;
 		}
 	}
@@ -467,7 +470,6 @@ int load_binaryFile(const char *filename, uchar *input, int size)
 		return -1;
 	}
 	fclose(fd);
-	printf("read_size = %d\n",sizeread);
 	return 0;
 }
 
@@ -487,7 +489,6 @@ int write_binaryFile(const char *filename, uchar *output, int size)
 		return -1;
 	}
 	fclose(fd);
-	printf("write_size = %d\n",sizewritten);
 	return 0;
 }	
 
@@ -517,7 +518,8 @@ void init_volume()
 	}
 }
 
-__device__ void print_file(const char *filename);
+__device__ void print_FCB(const char *filename);
+__device__ void print_FCB(int block);
 
 /************************************************************************************
  *
@@ -526,89 +528,9 @@ __device__ void print_file(const char *filename);
  ************************************************************************************/
 __global__ void mykernel(uchar *input, uchar *output)
 {
-//	uchar str[20]="this is a pen";
-	uchar str1[100]="aaaaaaaaaa";
-	uchar str2[100]="bbbbbbbbbbbbbbbbbbbb";
-	uchar str3[100]="cccccccccccccccccccccccccccccc";
-	uchar str4[100]="dddddddddddddddddddddddddddddddddddddddd";
-	uchar out[100];
-//	uchar out1[100];
-//	uchar out2[100];
-//	uchar out3[100];
-//	uchar out4[100];
-	const char file1[20]="a.txt";
-	const char file2[20]="b.txt";
-	const char file3[20]="c.txt";
-	const char file4[20]="d.txt";
-	const char file5[20]="e.txt";
-	const char file6[20]="f.txt\0";
-//	const char file7[20]="g.txt\0";
-//	const char file8[20]="h.txt\0";
-//	const char file9[20]="i.txt\0";
-//	const char file10[20]="j.txt\0";
 	//####kernel start####
-	u32 fp1=open(file1,G_WRITE);
-	u32 fp2=open(file2,G_WRITE);
-	u32 fp3=open(file3,G_WRITE);
-	u32 fp4=open(file4,G_WRITE);
-	u32 fp5=open(file5,G_WRITE);
 
-	gsys(LS_D);
-	write(str2+10,10,fp3);
-	write(str2,20,fp1);
-	write(str3,30,fp2);
-	write(str4,40,fp4);
-	write(str1,10,fp5);
-	write(str3,30,fp1);
-	write(str2,20,fp5);
-	gsys(LS_D);
-	fp3=open(file3,G_READ);
-	read(out,10,fp3);
-	gsys(LS_D);
-	gsys(RM,file1);
-	gsys(LS_D);
-	fp5=open(file5,G_READ);
-	read(out,20,fp5);
-	gsys(LS_D);
-	gsys(RM,file5);
-	gsys(LS_D);
-	u32 fp6=open(file6,G_READ);
-	read(out,0,fp6);
-	gsys(LS_D);
-	fp2=open(file2,G_READ);
-	read(out,30,fp2);
-	gsys(LS_D);
-	fp2=open(file2,G_READ);
-	read(out,30,fp2);
-	gsys(LS_D);
-
-
-
-
-/*	fp2=open(file2,G_READ);
-	read(out,48,fp2);
-	printf("the file content of %s = %s\n", file2, out);
-	gsys(LS_D);
-	gsys(LS_S);
-
-	gsys(RM,file2);
-	gsys(LS_D);
-	gsys(LS_S);
-
-	fp1=open(file1,G_WRITE);
-	write(str3,0,fp1);
-	fp1=open(file1,G_READ);
-	read(out,0,fp1);
-	printf("the file content of %s = %s\n", file1, out);*/
-/*	fp3=open(file3,G_WRITE);
-	write(str4,23,fp3);
-	fp3=open(file3,G_READ);
-	read(out1,23,fp3);
-	printf("the file content of %s = %s\n", file3, out1);*/
-//	gsys(LS_D);
-//	gsys(LS_S);
-
-/*	u32 fp=open("t.txt\0",G_WRITE);
+	u32 fp=open("t.txt\0",G_WRITE);
 	write(input,64,fp);
 	fp=open("b.txt\0",G_WRITE);
 	write(input+32,32,fp);
@@ -623,9 +545,60 @@ __global__ void mykernel(uchar *input, uchar *output)
 	gsys(LS_S);
 	gsys(LS_D);
 	gsys(RM,"t.txt\0");
+	gsys(LS_S);
+
+//---------------------------------Case2-----------------------------
+
+	char fname[10][20];
+	for(int i=0;i<10;i++){
+		fname[i][0] = i + 33;
+		for(int j=1;j<19;j++)
+			fname[i][j] = 64+j;
+		fname[i][19]='\0';
+	}
+	for(int i=0;i<10;i++){
+		u32 fp1 = open(fname[i],G_WRITE);
+		write(input+i,24+i,fp1);
+	}
+	gsys(LS_S);
+	for(int i=0;i<5;i++){
+		gsys(RM,fname[i]);
+	}
+	gsys(LS_D);
+
+//---------------------------------Case3------------------------------
+
+/*	char fname2[1018][20];
+	int p=0;
+	for(int k=2;k<15;k++){
+		for(int i=50;i<=126;i++,p++){
+			fname2[p][0] = i;
+			for(int j=1;j<k;j++)
+				fname2[p][j] = 64+j;
+			fname2[p][k]='\0';
+		}
+	}
+	for(int i=0;i<1001;i++){
+		fp=open(fname2[i],G_WRITE);
+		write(input+i,24+i,fp);
+	}
+	gsys(LS_S);
+
+	fp = open(fname2[1000],G_READ);
+	read(output+1000,1024,fp);
+	char fname3[17][3];
+	for(int i=0;i<17;i++){
+		fname3[i][0] = 97+i;
+		fname3[i][1] = 97+i;
+		fname3[i][2] = '\0';
+		fp = open(fname3[i],G_WRITE);
+		write(input+1024*i,1024,fp);
+	}
+	fp=open("EA\0",G_WRITE);
+	write(input+1024*100, 1024, fp);
 	gsys(LS_S);*/
+
 	//####kernel end####
-	printf("file num = %d\n",system_info->file_num);
 }
 
 /************************************************************************************
@@ -646,29 +619,22 @@ int main()
 
 	load_binaryFile(DATAFILE, input, FILE_STORAGE_SIZE);
 	
-	cudaSetDevice(4);
+	cudaSetDevice(2);
 	mykernel<<<1,1>>>(input, output);
 
 	cudaDeviceSynchronize();
 	write_binaryFile(OUTFILE, output, FILE_STORAGE_SIZE);
 	cudaDeviceReset();
 	
-//	printf("FCB size = %ld\n",sizeof(FCB));
-//	printf("volume start = %ld\n",(long unsigned int)volume);
-//	printf("system_info start = %ld\n",(long unsigned int)system_info);
-//	printf("FCB start = %ld\n",(long unsigned int)fcb_table);
-//	printf("Storage start = %ld\n",(long unsigned int)&volume[FILE_STORAGE_START]);
-//	printf("%d\n",fcb_table[100].file_size);
-//	printf("%d\n",system_info->file_num);
 	return 0;
 }
 
 /************************************************************************************
  *
- * The function dumping FCB information, debug uses
+ * The function dumps FCB information, debug uses
  *
  ************************************************************************************/
-__device__ void print_file(const char *filename)
+__device__ void print_FCB(const char *filename)
 {
 	u32 fcb=INVALID_VALUE;
 
@@ -678,6 +644,19 @@ __device__ void print_file(const char *filename)
 			break;
 		}
 	}
+	printf("==========File Info Start==========\n");
+	printf("file name = %s\n",fcb_table[fcb].name);
+	printf("valid = %s\n",(fcb_table[fcb].valid_entry==TRUE)?"TRUE":"FALSE");
+	printf("mode = %s\n",(fcb_table[fcb].mode==G_WRITE)?"WRITE":"READ");
+	printf("create time = %d\n",fcb_table[fcb].create_time);
+	printf("modified time = %d\n",fcb_table[fcb].modified_time);
+	printf("file block num = %d\n",fcb_table[fcb].block_num);
+	printf("file size = %d\n",fcb_table[fcb].file_size);
+	printf("==========File Info End==========\n");
+}
+__device__ void print_FCB(int block)
+{
+	u32 fcb=block;
 	printf("==========File Info Start==========\n");
 	printf("file name = %s\n",fcb_table[fcb].name);
 	printf("valid = %s\n",(fcb_table[fcb].valid_entry==TRUE)?"TRUE":"FALSE");
