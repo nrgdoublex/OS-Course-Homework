@@ -3,8 +3,6 @@
 #include<string.h>
 #include<fcntl.h>
 #include<sys/ioctl.h>
-#include <unistd.h>
-#include <limits.h>
 
 #include "ioc_hw5.h"
 
@@ -103,17 +101,13 @@ int arithmetic(int fd, char operator, int operand1, short operand2)
     //But cannot confirm computation completed
 
     printf("Waiting\n");
-
     //synchronize function
-
     ioctl(fd, HW5_IOCWAITREADABLE, &readable);
 
     if(readable==1){
         printf("Can read now.\n");
         read(fd, &ret, sizeof(int));
     }
-	else
-		printf("read not ready!!\n");
     printf("ans=%d ret=%d\n\n", ans, ret);
     /***********************************************/
 
@@ -125,7 +119,6 @@ int main()
     printf("...............Start...............\n");
 
     //open my char device:
- 	struct dataIn data;
     int fd = open("/dev/mydev", O_RDWR);
     if(fd == -1) {
         printf("can't open device!\n");
@@ -157,27 +150,13 @@ int main()
         printf("set irq failed\n");
         return -1;
     }
-    ret = 1;
-    if (ioctl(fd, HW5_IOCSETBLOCK, &ret) < 0) {
-        printf("set irq failed\n");
-        return -1;
-    }
-	data.a='p';
-	data.b=100;
-	data.c=20000;
-	write(fd,&data,sizeof(data));
-	//sleep(1);
-	if(read(fd,&ret,sizeof(int)))
-		printf("read not ready!\n");
-	printf("%d %c %d = %d\n",data.b,data.a,data.c,ret);
-	
 
-    //arithmetic(fd, '+', 100, 10);
-    //arithmetic(fd, '-', 100, 10);
-    //arithmetic(fd, '*', 100, 10);
-    //arithmetic(fd, '/', 100, 10);
-//	arithmetic(fd, 'p', 100, 10000);
-//	arithmetic(fd, 'p', 100, 20000);
+    //arithmetic(fd, '+', 100, -32768);
+    //arithmetic(fd, '-', 100, -32768);
+    //arithmetic(fd, '*', 100, -32768);
+    //arithmetic(fd, '/', 100, -10);
+    arithmetic(fd, 'p', 100, 10000);
+    arithmetic(fd, 'p', 100, 20000);
 
 
     printf("...............End...............\n");

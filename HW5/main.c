@@ -14,7 +14,7 @@
 #include <asm/uaccess.h>
 #include "ioc_hw5.h"
 
-#define DUBUG
+#define DEBUGG
 #define TRUE				(1)
 #define FALSE				(0)
 
@@ -59,7 +59,6 @@ struct dataIn{
 // the data structure of device
 struct oshw5_dev{
 	struct work_struct work;
-//	struct workqueue_struct *workqueue;
 	struct semaphore sem;
 	int drv_major;					//device major number
 	int drv_minor;					//device minor number
@@ -122,7 +121,7 @@ irqreturn_t interrupt_routine(int irq, void *dev_id)
 
 
 /*---------------------Arithmetic Functions---------------------*/
-int prime(int base, short nth)
+int prime(int base, int nth)
 {
 	int fnd=0;
 	int i, num, isPrime;
@@ -145,29 +144,44 @@ int prime(int base, short nth)
 
 int arithmetic_routine(char operator, int operand1, short operand2)
 {
-	int ans;
+	int ans=0;
 
 	switch(operator){
 		case '+':
 			ans=operand1+operand2;
+			PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
 			break;
 		case '-':
 			ans=operand1-operand2;
+			PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
 			break;
 		case '*':
 			ans=operand1*operand2;
+			PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
 			break;
 		case '/':
-			ans=operand1/operand2;
+			if(operand2==0){
+				PMEG("%s():Cannot divide by 0\n",__FUNCTION__);
+			}
+			else{
+				ans=operand1/operand2;
+				PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
+			}
 			break;
 		case 'p':
-			ans=prime(operand1,operand2);
+			if(operand2<=0){
+				PMEG("%s():The operand2 of prime function should be positive\n",__FUNCTION__);
+			}
+			else{
+				ans=prime(operand1,operand2);
+				PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
+			}
 			break;
 		default:
 			ans=0;
+			PMEG("%s():invalid operator\n",__FUNCTION__);
 			return -EINVAL;
 	}
-	PMEG("%s(): %d %c %d = %d\n",__FUNCTION__,operand1, operator, operand2, ans);
 	return ans;
 }
 
@@ -207,11 +221,12 @@ ssize_t drv_read(struct file *filp, char __user *buf, size_t count, loff_t *f_op
 		return -ERESTARTSYS;
 
 	if(myinl(DMAREADABLEADDR)==DEV_NOT_READABLE){
-		retval = -EBUSY;
-		goto out;
+		PMEG("%s():The device is still not readable\n",__FUNCTION__);
+		value=0;
 	}
-
-	value = myinl(DMAANSADDR);
+	else{
+		value = myinl(DMAANSADDR);
+	}
 	
 	PMEG("%s(): ans = %d\n",__FUNCTION__,value);
 	if(copy_to_user(buf,(const void *)&value,sizeof(int))){
@@ -219,7 +234,8 @@ ssize_t drv_read(struct file *filp, char __user *buf, size_t count, loff_t *f_op
 		goto out;
 	}
 
-	myoutl(0,DMAANSADDR);
+	myoutl(0,DMAANSADDR);										//clear result if we have read result
+	myoutl(DEV_NOT_READABLE,DMAREADABLEADDR);					//disable succeeding read until we write
 
 out:
 	up(&drv_dev->sem);
@@ -246,7 +262,6 @@ ssize_t drv_write(struct file *filp, const char __user *buf, size_t count, loff_
 
 	PMEG("%s(): queue work\n",__FUNCTION__);
 	retval = schedule_work(&drv_dev->work);
-//	retval = queue_work(drv_dev->workqueue, &drv_dev->work);	//send work to workqueue
 
 	value=myinl(DMABLOCKADDR);
 	if(value==NONBLOCKING_IO){									//if blocking IO is enabled
@@ -292,54 +307,41 @@ long drv_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		case HW5_IOCSETRWOK:
 			value = *(unsigned int *)arg;
-			if(value != RW_OK && value != RW_NOT_OK){
-				PMEG("%s(): Invalid value for RW Register\n",__FUNCTION__);
-				return -EINVAL;
-			}
 			myoutl(value,DMARWOKADDR);
 			if(*(unsigned int *)arg==myinl(DMARWOKADDR))
-				PMEG("%s(): RW OK\n",__FUNCTION__);
+				PMEG("%s(): RW OK, value is %d\n",__FUNCTION__,myinl(DMARWOKADDR));
 			else
 				PMEG("%s(): RW failed\n",__FUNCTION__);
 			break;
 		case HW5_IOCSETIOCOK:
 			value = *(unsigned int *)arg;
-			if(value != IOC_OK && value != IOC_NOT_OK){
-				PMEG("%s(): Invalid value for IOC Register\n",__FUNCTION__);
-				return -EINVAL;
-			}
 			myoutl(value,DMAIOCOKADDR);
 			if(*(unsigned int *)arg==myinl(DMAIOCOKADDR))
-				PMEG("%s(): IOC OK\n",__FUNCTION__);
+				PMEG("%s(): IOC OK, value is %d\n",__FUNCTION__,myinl(DMAIOCOKADDR));
 			else
 				PMEG("%s(): IOC failed\n",__FUNCTION__);
 			break;
 		case HW5_IOCSETIRQOK:
 			value = *(unsigned int *)arg;
-			if(value != IRQ_OK && value != IRQ_NOT_OK){
-				PMEG("%s(): Invalid value for IRQ Register\n",__FUNCTION__);
-				return -EINVAL;
-			}
 			myoutl(value,DMAIRQOKADDR);
 			if(*(unsigned int *)arg==myinl(DMAIRQOKADDR))
-				PMEG("%s(): IRQ OK\n",__FUNCTION__);
+				PMEG("%s(): IRQ OK, value is %d\n",__FUNCTION__,myinl(DMAIRQOKADDR));
 			else
 				PMEG("%s(): IRQ failed\n",__FUNCTION__);
 			break;
 		case HW5_IOCSETBLOCK:
 			value = *(unsigned int *)arg;
-			if(value != BLOCKING_IO && value != NONBLOCKING_IO){
-				PMEG("%s(): Invalid value for BLOCKING Register\n",__FUNCTION__);
-				return -EINVAL;
-			}
 			myoutl(value,DMABLOCKADDR);
-			if(*(unsigned int *)arg==myinl(DMABLOCKADDR))
+			if(*(unsigned int *)arg==myinl(DMABLOCKADDR)){
 				if(myinl(DMABLOCKADDR)==BLOCKING_IO)
 					PMEG("%s(): Blocking IO\n",__FUNCTION__);
-				else
+				else if(myinl(DMABLOCKADDR)==NONBLOCKING_IO)
 					PMEG("%s(): Non-Blocking IO\n",__FUNCTION__);
+				else
+					PMEG("%s(): Set other values\n",__FUNCTION__);
+			}
 			else
-				PMEG("%s(): Set STUID failed\n",__FUNCTION__);
+				PMEG("%s(): Set Blocking Mode failed\n",__FUNCTION__);
 			break;
 		case HW5_IOCWAITREADABLE:
 			while((readable=myinl(DMAREADABLEADDR))==DEV_NOT_READABLE){
@@ -441,7 +443,6 @@ int __init init_modules(void)
 	}
 	//we don't initialize work struct here
 	INIT_WORK(&drv_dev->work, arithmetic_work);
-//	drv_dev->workqueue = create_workqueue("oshw5_wq");											//create workqueue
 
 
 	//initialize dma buffer
@@ -450,6 +451,10 @@ int __init init_modules(void)
 		goto dma_buf_fail;
 	}
 	PMEG("%s():allocate dma buffer\n",__FUNCTION__);
+#ifdef DEBUG
+	PMEG("%s():%p\n",__FUNCTION__,(unsigned int *)dma_buf);
+	PMEG("%s():%p\n",__FUNCTION__,(unsigned int *)(dma_buf+0x25));
+#endif
 
 
 	return 0;
@@ -480,7 +485,6 @@ void __exit exit_modules(void)
 	free_dma_buf();										//free dma buffer
 	PMEG("%s():free dma buffer\n",__FUNCTION__);
 
-//	destroy_workqueue(drv_dev->workqueue);				//destroy workqueue
 	if(drv_dev){
 		cdev_del(&drv_dev->cdev);						//delete char device
 		kfree(drv_dev);									//free the driver data structure
