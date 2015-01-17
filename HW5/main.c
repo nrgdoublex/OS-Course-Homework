@@ -221,7 +221,7 @@ ssize_t drv_read(struct file *filp, char __user *buf, size_t count, loff_t *f_op
 		return -ERESTARTSYS;
 
 	if(myinl(DMAREADABLEADDR)==DEV_NOT_READABLE){
-		PMEG("%s():The device is still not readable\n",__FUNCTION__);
+		PMEG("%s(): The device is still not readable\n",__FUNCTION__);
 		value=0;
 	}
 	else{

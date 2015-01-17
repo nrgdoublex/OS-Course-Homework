@@ -151,10 +151,10 @@ int main()
         return -1;
     }
 
-    //arithmetic(fd, '+', 100, -32768);
-    //arithmetic(fd, '-', 100, -32768);
-    //arithmetic(fd, '*', 100, -32768);
-    //arithmetic(fd, '/', 100, -10);
+    //arithmetic(fd, '+', 100, 10);
+    //arithmetic(fd, '-', 100, 10);
+    //arithmetic(fd, '*', 100, 10);
+    //arithmetic(fd, '/', 100, 10);
     arithmetic(fd, 'p', 100, 10000);
     arithmetic(fd, 'p', 100, 20000);
 
